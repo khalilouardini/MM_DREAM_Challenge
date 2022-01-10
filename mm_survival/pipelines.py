@@ -1,8 +1,7 @@
 import logging
 import pandas as pd
-import numpy as np
-import os
 from mm_survival import data, models
+from sklearn.model_selection import train_test_split
 
 def run_survival_analysis(tpm_rna_filename, count_rna_file, clinical_file,
                     DE_genes_filename, signature_gene_filename, model, n_estimators, random_search):
@@ -24,7 +23,7 @@ def run_survival_analysis(tpm_rna_filename, count_rna_file, clinical_file,
     n_estimators: int
         Number of estimators in ensembling model
     """
-    logging.info('Starting the pipeline')
+    logging.info('=== Data pre-processing ===')
 
     # Import data
     df_counts_tpm = pd.read_csv(tpm_rna_filename, index_col=False)
@@ -70,6 +69,7 @@ def run_survival_analysis(tpm_rna_filename, count_rna_file, clinical_file,
     df_train, idx_to_gene = data.select_genes(df_counts_tpm)
 
     # 4. Merge with clinical data
+    df_train = df_train.T
     df_train["D_ISS"] = df_clin["D_ISS"].values
     df_train["D_Age"] = df_clin["D_Age"].values
     df_train["D_Gender"] = df_clin["D_Gender"].values
@@ -79,8 +79,33 @@ def run_survival_analysis(tpm_rna_filename, count_rna_file, clinical_file,
     df_train = data.encode_binary(df_train, ["D_Gender"])
     ## b. Binning the "D_Age" variable
     df_train = data.encode_binary(df_train, "D_Age", [0, 35, 50, 60, 70, 80, 200])
-    ## c. Missing values (???)
+    ## c. Missing values
     df_train[['D_ISS']] = df_train[['D_ISS']].fillna(2)
+
+    # 6. Prepare design matrix and labels
+    X = df_train.values
+
+    ## a. Classification labels labels
+    replace_dict = {'TRUE': 1, 'FALSE': 0}
+    y_hr = df_clin['HR_FLAG'].replace(replace_dict).values
+    y_os_clf = df_clin['D_OS_FLAG'].values
+    y_pfs_clf = df_clin['D_PFS_FLAG'].values
+    ## b. Regression labels
+    y_os = df_clin['D_OS'].values
+    y_pfs = df_clin['D_PFS'].values
+
+    # 7. Splitting data
+    X_train, X_test, y_train_hr, y_test_hr, y_train_os, _, y_train_pfs, _ = train_test_split(X,
+                                                                    y_hr,
+                                                                    y_os,
+                                                                    y_pfs,
+                                                                    test_size=0.2)     
+    
+
+    logging.info("=== End of Data pre-processing ===")
+
+    logging.info("=== Start model training ===")
+
 
     # Fit model
     #KEEP_FEATURES = [col for col in processed_df.columns if col not in ['price', 'logprice', 'drug_id']]
