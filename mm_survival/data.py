@@ -84,9 +84,9 @@ def binning_feature(df, feat, bins):
     """
     labels_bins = [1, 2, 3, 4, 5, 6]
 
-    df["D_Age"] = pd.cut(df[feat],
-                            bins=bins,
-                            labels=labels_bins
-                            )
+    df[feat] = pd.cut(df[feat],
+                        bins=bins,
+                        labels=labels_bins
+                        )
     return df
 
