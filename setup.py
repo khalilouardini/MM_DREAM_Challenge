@@ -26,5 +26,9 @@ setup(
     packages=['mm_survival'],
     install_requires=[
         'pypandoc>=1.4'
-    ]
+    ],
+    entry_points='''
+    [console_scripts]
+    mm_survival_analysis = mm_survival.command_line:mm_survival_analysis
+    '''
 )

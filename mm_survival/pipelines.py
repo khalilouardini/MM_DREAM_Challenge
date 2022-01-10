@@ -1,10 +1,10 @@
 import logging
 import pandas as pd
 from mm_survival import data, models
-from sklearn.model_selection import train_test_split
+import numpy as np
 
 def run_survival_analysis(tpm_rna_filename, count_rna_file, clinical_file,
-                    DE_genes_filename, signature_gene_filename, model, n_estimators, random_search):
+                    DE_genes_filename, signature_gene_filename, model, n_estimators):
     """Data pipeline and predictions on train set.
     Parameters
     ----------
@@ -18,7 +18,7 @@ def run_survival_analysis(tpm_rna_filename, count_rna_file, clinical_file,
         Informative genes selected by differential analysis
     DE_genes: str:
         Signature genes from the litterature (EMC-92 and UAMS-70)
-    mdoel: str
+    model: str
         Model to train [Random Forest ('RF') or XGBoost ('XG')]
     n_estimators: int
         Number of estimators in ensembling model
@@ -26,9 +26,12 @@ def run_survival_analysis(tpm_rna_filename, count_rna_file, clinical_file,
     logging.info('=== Data pre-processing ===')
 
     # Import data
-    df_counts_tpm = pd.read_csv(tpm_rna_filename, index_col=False)
+    df_tpm = pd.read_csv(tpm_rna_filename, index_col=False)
     df_counts = pd.read_csv(count_rna_file, delimiter = "\t")
     df_clin = pd.read_csv(clinical_file)
+
+    # Rename Gene ID column 
+    df_tpm = df_tpm.rename(columns = {'Unnamed: 0':'Entrez_ID'})
 
     # Import genes
     with open(DE_genes_filename, 'r') as f:
@@ -39,13 +42,10 @@ def run_survival_analysis(tpm_rna_filename, count_rna_file, clinical_file,
     signature_genes = [int(line.split('\n')[0]) for line in lines]
 
     print("We have {} genes in the raw counts gene expression matrix".format(df_counts['GENE_ID'].unique().shape[0]))
-    print("We have {} genes in the raw counts gene expression matrix".format(df_counts_tpm['Entrez_ID'].unique().shape[0]))
+    print("We have {} genes in the TPM normalized gene expression matrix".format(df_tpm['Entrez_ID'].unique().shape[0]))
 
     print("N° of patients in the MMRF cohort, with RNAseq available RNA-seq data: {}".format(df_counts.shape[1]))
-    print("N° of patients in the MMRF cohort, with RNAseq available TPM-normalized RNA-seq data: {}".format(df_counts_tpm.shape[1]))
-
-    # Rename Gene ID column
-    df_counts_tpm = df_counts_tpm.rename(columns = {'Unnamed: 0':'Entrez_ID'})
+    print("N° of patients in the MMRF cohort, with RNAseq available TPM-normalized RNA-seq data: {}".format(df_tpm.shape[1]))
 
     # Standardize patients ID's
     df_clin['Patient'] += '_1_BM'
@@ -53,73 +53,95 @@ def run_survival_analysis(tpm_rna_filename, count_rna_file, clinical_file,
     # Pre-processing pipeline for train set
 
     # 1. Finiding the common patients between the 3 data sources, and select them
-    common_patients = data.find_common_patients(df_clin, df_counts_tpm, df_counts)
+    common_patients = data.find_common_patients(df_clin, df_tpm, df_counts)
     print("Number of patients with clinical and sequencing data: {}".format(len(common_patients)))
     df_counts = df_counts.loc[:, ['GENE_ID'] + common_patients]
-    df_counts_tpm = df_counts_tpm.loc[:, ['Entrez_ID'] + common_patients]
+    df_tpm = df_tpm.loc[:, ['Entrez_ID'] + common_patients]
     df_clin = df_clin[df_clin['Patient'].isin(common_patients)]
 
-    # 2. We only keep non-censored patients (!! /!\)
-    df_clin = df_clin[df_clin['HR_FLAG'] != "CENSORED"]
-    df_counts_tpm = df_counts_tpm.loc[:, ['Entrez_ID'] + list(df_clin['Patient'])]
-    df_counts = df_counts.loc[:, ['GENE_ID'] + list(df_clin['Patient'])]
 
-    # 3. Select Differentially expressed genes
+    # 3. Seperate censored and non-censored patients
+    ## a. censored
+    df_clin_censored = df_clin[df_clin['HR_FLAG'] == "CENSORED"]
+    df_tpm_censored = df_tpm.loc[:, ['Entrez_ID'] + list(df_clin_censored['Patient'])]
+    ## b. not censored
+    df_clin = df_clin[df_clin['HR_FLAG'] != "CENSORED"]
+    df_tpm = df_tpm.loc[:, ['Entrez_ID'] + list(df_clin['Patient'])]
+    
+    ## c. Raw counts GE data
+    #df_counts_censored =  df_counts.loc[:, ['GENE_ID'] + list(df_clin_censored['Patient'])]
+    #df_counts = df_counts.loc[:, ['GENE_ID'] + list(df_clin['Patient'])]
+    # 4. Select Differentially expressed genes for censored and non-censored patients
     print("Total number of genes in the dataset: {}".format(len(DE_genes)))
-    df_train, idx_to_gene = data.select_genes(df_counts_tpm)
+    df_train, _ = data.select_genes(df_tpm, DE_genes)
+    df_train_censored, _ =  data.select_genes(df_tpm_censored, DE_genes)
 
     # 4. Merge with clinical data
     df_train = df_train.T
     df_train["D_ISS"] = df_clin["D_ISS"].values
     df_train["D_Age"] = df_clin["D_Age"].values
-    df_train["D_Gender"] = df_clin["D_Gender"].values
+
+    df_train_censored = df_train_censored.T
+    df_train_censored["D_ISS"] = df_clin_censored["D_ISS"].values
+    df_train_censored["D_Age"] = df_clin_censored["D_Age"].values
+
+    #df_train["D_Gender"] = df_clin["D_Gender"].values
 
     # 5. Prepare clinical features
     ## a. Encode binary variables
-    df_train = data.encode_binary(df_train, ["D_Gender"])
+    #df_train = data.encode_binary(df_train, ["D_Gender"])
     ## b. Binning the "D_Age" variable
-    df_train = data.encode_binary(df_train, "D_Age", [0, 35, 50, 60, 70, 80, 200])
+    df_train = data.binning_feature(df_train, "D_Age", [0, 35, 50, 60, 70, 80, 200])
+    df_train_censored = data.binning_feature(df_train_censored, "D_Age", [0, 35, 50, 60, 70, 80, 200])
     ## c. Missing values
     df_train[['D_ISS']] = df_train[['D_ISS']].fillna(2)
+    df_train_censored[['D_ISS']] = df_train_censored[['D_ISS']].fillna(2)
 
     # 6. Prepare design matrix and labels
     X = df_train.values
-
     ## a. Classification labels labels
     replace_dict = {'TRUE': 1, 'FALSE': 0}
     y_hr = df_clin['HR_FLAG'].replace(replace_dict).values
-    y_os_clf = df_clin['D_OS_FLAG'].values
-    y_pfs_clf = df_clin['D_PFS_FLAG'].values
+    #y_os_clf = df_clin['D_OS_FLAG'].values
+    #y_pfs_clf = df_clin['D_PFS_FLAG'].values
     ## b. Regression labels
     y_os = df_clin['D_OS'].values
     y_pfs = df_clin['D_PFS'].values
 
-    # 7. Splitting data
-    X_train, X_test, y_train_hr, y_test_hr, y_train_os, _, y_train_pfs, _ = train_test_split(X,
-                                                                    y_hr,
-                                                                    y_os,
-                                                                    y_pfs,
-                                                                    test_size=0.2)     
-    
+    # 7. Additional data for regression models
+    X_censored = df_train_censored.values
+    y_os_censored = df_clin_censored['D_OS'].values
+    y_pfs_censored = df_clin_censored['D_PFS'].values
 
+    # 8. 
+    inputs = [X, y_hr, y_os, y_pfs]
+    inputs_censored = [X_censored, y_os_censored, y_pfs_censored]
+
+    # 9. Train model
     logging.info("=== End of Data pre-processing ===")
-
+    clf, accs, aucs = models.fit_cv_clf([X, y_hr], model, n_estimators)
+    #clf, regressor_os, regressor_pfs, accs, aucs = models.fit_cv_ensemble(inputs, inputs_censored, model, n_estimators)
     logging.info("=== Start model training ===")
 
+    return accs, aucs
 
-    # Fit model
-    #KEEP_FEATURES = [col for col in processed_df.columns if col not in ['price', 'logprice', 'drug_id']]
-    #if not random_search:
-    #    model, mape_score, mse_score, mae_score = models.fit_cv(processed_df,
-    #                                                            KEEP_FEATURES,
-    #                                                            model=model,
-    #                                                            n_estimators=n_estimators
-    #                                                            )
-    #else:
-    #    logging.info("=== Hyperparameter Tuning ===")
-    #    model, mape_score, mse_score, mae_score = models.fit_cv_random_search(processed_df,
-    #                                                    KEEP_FEATURES,
-    #                                                    model=model
-    #                                                    )
+if __name__ == "__main__":
+    tpm_rna_filename = 'exploration/data/gene_expression/MMRF_CoMMpass_IA9_E74GTF_Salmon_entrezID_TPM_hg19.csv'
+    count_rna_file = 'exploration/data/gene_expression/MMRF_CoMMpass_IA9_E74GTF_Salmon_Gene_Counts.txt'
+    clinical_file = 'exploration/data/clinical/sc3_Training_ClinAnnotations.csv'
+    DE_genes_filename = 'exploration/data/gene_expression/differential_expression/DE_genes.txt'
+    signature_genes_filename = 'exploration/data/gene_expression/differential_expression/signature_genes.txt'
 
-    #return model, mape_score, mse_score, mae_score
+    #run_survival_analysis(tpm_rna_filename, count_rna_file, clinical_file,
+                    #DE_genes_filename, signature_genes_filename, 'RF', 100)
+
+    final_acc = []
+    final_auc = []
+    for i in range(50):
+        accs, aucs = run_survival_analysis(tpm_rna_filename, count_rna_file, clinical_file,
+                    DE_genes_filename, signature_genes_filename, 'RF', 100)
+        final_acc.append(np.mean(accs))
+        final_auc.append(np.mean(aucs))
+    
+    print(np.mean(final_acc), np.mean(final_auc))
+    print("Done")
