@@ -1,0 +1,148 @@
+---
+title: "Differential_Analysis"
+output: html_notebook
+---
+
+# A notebook for Different Analysis of RNA-seq data with DESeq2.
+
+Intalling packages
+
+```{r}
+# Imports
+#install.packages("BiocManager")
+#BiocManager::install('limma')
+#BiocManager::install('ggplot2')
+#BiocManager::install("DESeq2")
+#install.packages("htmltools")
+#install.packages("rmarkdown")
+```
+
+Imports
+
+```{r}
+library(rmarkdown)
+library(htmltools)
+library( "DESeq2" )
+```
+
+Import Gene Expression Data (counts)
+```{r}
+# Import CountData
+counts_path <- "/Users/khalilouardini/Desktop/Job Search/Owkin/MM_DREAM_Challenge/exploration/data/gene_expression/differential_expression/count_gene_expression.csv"
+countData <- read.csv(counts_path, header = TRUE, sep = ",")
+head(countData)
+```
+Import Clinial Metadata
+```{r}
+metadata_path <- "/Users/khalilouardini/Desktop/Job Search/Owkin/MM_DREAM_Challenge/exploration/data/gene_expression/differential_expression/metadata.csv"
+metaData <- read.csv(metadata_path, header = TRUE, sep = ",")
+head(MetaData)
+```
+
+Construct DESeqDataaset object
+```{r}
+dds <-  DESeqDataSetFromMatrix(countData=countData, 
+                              colData=metaData, 
+                              design=~HR_FLAG,
+                              tidy = TRUE)
+```
+
+let's see what this object looks like
+
+```{r}
+#Design specifies how the counts from each gene depend on our variables in the metadata
+#For this dataset the factor we care about is our treatment status (dex)
+#tidy=TRUE argument, which tells DESeq2 to output the results table with rownames as a first #column called 'row.
+
+#
+dds
+```
+
+DE analyis
+```{r}
+dds <- DESeq(dds)
+```
+
+results table
+
+```{r}
+res <- results(dds)
+head(results(dds, tidy=TRUE)) #let's look at the results table
+```
+
+Summary of the DE
+
+```{r}
+summary(res) #summary of results
+```
+
+Sort summary list by p-value
+
+```{r}
+res <- res[order(res$pvalue),]
+head(res)
+```
+
+plotCounts
+
+```{r}
+#we can use plotCounts fxn to compare the normalized counts
+#between treated and control groups for our top 6 genes
+par(mfrow=c(2,3))
+
+df = plotCounts(dds, gene=6279, intgroup="HR_FLAG", returnData = TRUE)
+#plotCounts(dds, gene=6286, intgroup="HR_FLAG")
+#plotCounts(dds, gene=8993, intgroup="HR_FLAG")
+#plotCounts(dds, gene=383, intgroup="HR_FLAG")
+#plotCounts(dds, gene=7075, intgroup="HR_FLAG")
+#plotCounts(dds, gene=90865, intgroup="HR_FLAG")
+df
+```
+
+```{r}
+plot(df)
+```
+
+Volcano plot 
+
+```{r}
+#reset par
+par(mfrow=c(1,1))
+# Make a basic volcano plot
+with(res, plot(log2FoldChange, -log10(pvalue), pch=20, main="Volcano plot", xlim=c(-3,3)))
+
+# Add colored points: blue if padj<0.01, red if log2FC>1 and padj<0.05)
+with(subset(res, padj<.01 ), points(log2FoldChange, -log10(pvalue), pch=20, col="blue"))
+with(subset(res, padj<.01 & abs(log2FoldChange)>2), points(log2FoldChange, -log10(pvalue), pch=20, col="red"))
+```
+PCA analysis
+
+```{r}
+vsdata <- vst(dds, blind=FALSE)
+```
+
+```{r}
+plotPCA(vsdata, intgroup="HR_FLAG") 
+```
+
+```{r}
+write.csv(res, file="/Users/khalilouardini/Desktop/Job Search/Owkin/MM_DREAM_Challenge/exploration/data/gene_expression/differential_expression/DE_results.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
