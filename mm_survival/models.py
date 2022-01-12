@@ -2,13 +2,12 @@ import logging
 import pandas as pd
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.metrics import roc_curve, auc, balanced_accuracy_score
+from sklearn.metrics import roc_curve, auc, accuracy_score, precision_score, recall_score
 import time
 import numpy as np
 from scipy.stats import pearsonr
 from sklearn.model_selection import KFold
 import xgboost as xg
-
 
 def fit_cv_clf(inputs, model, n_estimators):
     """Fits a regressor on the data using a 5-fold cross validation.
@@ -37,17 +36,16 @@ def fit_cv_clf(inputs, model, n_estimators):
                 }
     else:
         hyperparameters_xg = {'learning_rate': 0.01,
-                          'n_estimators' :n_estimators,
-                          'max_depth' :100,
-                          'n_jobs': -1
+                          'n_estimators' : n_estimators,
+                          'max_depth' :60,
+                          'n_jobs': -1,
                         }
 
 
     logging.info("Data preparation")
     X, y = inputs
 
-    accs = []
-    aucs = []
+    accs, aucs, recalls, precisions  = [], [], [], []
 
     kfold = KFold(n_splits=5)
     kfold = KFold(n_splits=5)
@@ -62,13 +60,13 @@ def fit_cv_clf(inputs, model, n_estimators):
             logging.info("Using RandomForest()...")
             clf =  RandomForestClassifier(**hyperparameters_rf)
         else:
-            logging.info("Using XGBRegressor()...")
+            logging.info("Using XGBClassifier()...")
             clf = xg.XGBClassifier(**hyperparameters_xg)
 
 
         t0 = time.time()
 
-        logging.info("Fitting Ensemble")
+        logging.info("Fitting Classifier")
         clf.fit(X_train, y_train)
         logging.info("Fit in %0.3fs" % (time.time() - t0))
 
@@ -76,18 +74,21 @@ def fit_cv_clf(inputs, model, n_estimators):
         y_pred = clf.predict(X_valid)
 
         # Metrics
-        acc = balanced_accuracy_score(y_pred, y_valid)
+        acc = accuracy_score(y_pred, y_valid)
         fpr, tpr, _ = roc_curve(y_pred, y_valid)
+        precision = precision_score(y_pred, y_valid)
+        recall = recall_score(y_pred, y_valid)
         auc_score = auc(fpr, tpr)
-        accs.append(acc)
-        aucs.append(auc_score)
-        print("Balanced Accuracy: {} | AUC: {}".format(acc, auc_score))
+
+        accs.append(acc), aucs.append(auc_score), precisions.append(precision), recalls.append(recall)
+        print("Accuracy: {} | AUC: {} | Precision: {} | Recall: {}".format(acc, auc_score, precision, recall))
             
-    logging.info("=== Balanced accuracy : mean = {} ; std = {} ===".format(np.mean(accs), np.std(accs)))
+    logging.info("=== Accuracy : mean = {} ; std = {} ===".format(np.mean(accs), np.std(accs)))
     logging.info("=== AUC : mean = {} ; std = {} ===".format(np.mean(aucs), np.std(aucs)))
+    logging.info("=== AUC : mean = {} ; std = {} ===".format(np.mean(precisions), np.std(precisions)))
+    logging.info("=== AUC : mean = {} ; std = {} ===".format(np.mean(recalls), np.std(recalls)))
 
-
-    return clf, accs, aucs
+    return clf, accs, aucs, precisions, recalls
 
 def fit_cv_ensemble(inputs, inputs_censored, model, n_estimators):
     """Fits a regressor on the data using a 5-fold cross validation.
@@ -142,9 +143,9 @@ def fit_cv_ensemble(inputs, inputs_censored, model, n_estimators):
         y_os_train, _ = y_os[train_index], y_os[valid_index]
         y_pfs_train, _ = y_pfs[train_index], y_pfs[valid_index]
         # Stack censored data
-        y_os_train = np.hstack([y_os_train, y_os_censored])
-        y_pfs_train = np.hstack([y_pfs_train, y_pfs_censored])
-        X_train_regr = np.vstack([X_train, X_censored])
+        #y_os_train = np.hstack([y_os_train, y_os_censored])
+        #y_pfs_train = np.hstack([y_pfs_train, y_pfs_censored])
+        #X_train_regr = np.vstack([X_train, X_censored])
 
         if model == 'RF':
             logging.info("Using RandomForest()...")
@@ -162,38 +163,38 @@ def fit_cv_ensemble(inputs, inputs_censored, model, n_estimators):
 
         logging.info("Fitting Ensemble")
         clf.fit(X_train, y_train)
-        regressor_os.fit(X_train_regr, y_os_train)
-        regressor_pfs.fit(X_train_regr, y_pfs_train)
+        regressor_os.fit(X_train, y_os_train)
+        regressor_pfs.fit(X_train, y_pfs_train)
         logging.info("Fit in %0.3fs" % (time.time() - t0))
 
         logging.info("Inference on validation set")
         y_pred_hr = clf.predict(X_valid)
         # Prediction for D_OS
         y_pred_os = regressor_os.predict(X_valid)
-        y_pred_os = y_pred_os <= 18*30
+        y_pred_os = y_pred_os < 18*30
         # Prediction for PFS
         y_pred_pfs = regressor_pfs.predict(X_valid)
-        y_pred_pfs = y_pred_pfs <= 18*30
+        y_pred_pfs = y_pred_pfs < 18*30
         # Prediction for regressions
         y_pred_regr = np.logical_or(y_pred_os, y_pred_pfs).astype(int)
         # Final prediction
         y_pred = np.logical_or(y_pred_hr, y_pred_regr).astype(int)
 
         # Metrics
-        acc = balanced_accuracy_score(y_pred, y_valid)
+        acc = accuracy_score(y_pred, y_valid)
         fpr, tpr, _ = roc_curve(y_pred, y_valid)
         auc_score = auc(fpr, tpr)
         accs.append(acc)
         aucs.append(auc_score)
-        print("Balanced Accuracy: {} | AUC: {}".format(acc, auc_score))
+        print("Accuracy: {} | AUC: {}".format(acc, auc_score))
             
-    logging.info("=== Balanced accuracy : mean = {} ; std = {} ===".format(np.mean(accs), np.std(accs)))
+    logging.info("=== Accuracy : mean = {} ; std = {} ===".format(np.mean(accs), np.std(accs)))
     logging.info("=== AUC : mean = {} ; std = {} ===".format(np.mean(aucs), np.std(aucs)))
 
 
     return clf, regressor_os, regressor_pfs, accs, aucs
 
-def fit_train(train_df, keep_features, model):
+def fit_cv_search(inputs, model):
     """Fits a regressor on the data using a 5-fold cross validation.
     Parameters
     ----------
@@ -218,38 +219,26 @@ def fit_train(train_df, keep_features, model):
             }
 
     logging.info("Data preparation")
-    X_train, X_test, y_train, y_test = data_preparation(train_df, keep_features)
+    X, y = inputs
 
     if model == 'RF':
         logging.info("Using RandomForest()...")
-        rf = RandomForestRegressor()
+        rf = RandomForestClassifier()
     else:
         logging.info("Using XGBRegressor()...")
-        rf = xg.XGBRegressor()
+        rf = xg.XGBClassifer()
     rf_random = RandomizedSearchCV(estimator = rf,
                                 param_distributions = random_grid,
-                                n_iter = 10,
-                                cv = 3,
+                                n_iter = 20,
+                                cv = 5,
                                 verbose=2,
                                 random_state=42,
                                 n_jobs = -1
                                 )
-    rf_random.fit(X_train, y_train)
+    rf_random.fit(X, y)
 
     logging.info("Best parameters {} for {} model".format(model, rf_random.best_params_))
     best_model = rf_random.best_estimator_
-    y_pred_test = best_model.predict(X_test)
 
-    logging.info("Running inference with best {} model".format(model))
-    r = pearsonr(y_test, y_pred_test)
-    mape_test = mape_error(np.exp(y_test), np.exp(y_pred_test))
-    rmse_test = np.sqrt(mean_squared_error(np.exp(y_test), np.exp(y_pred_test)))
-    mae_test = mean_absolute_error(np.exp(y_test), np.exp(y_pred_test))
 
-    logging.info("===On the test set: MAPE={} | RMSE={} | MAE={} | Pearson (Log) r = {}===".format(str(mape_test),
-                str(rmse_test), 
-                str(mae_test), 
-                str(r))
-                )
-
-    return best_model, mape_test, rmse_test, mae_test
+    return best_model, rf_random.best_params_
