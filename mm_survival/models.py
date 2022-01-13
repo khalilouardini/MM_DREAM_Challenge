@@ -1,31 +1,28 @@
 import logging
 import pandas as pd
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.metrics import roc_curve, auc, accuracy_score, precision_score, recall_score
 import time
 import numpy as np
-from scipy.stats import pearsonr
 from sklearn.model_selection import KFold
+from sklearn.utils import shuffle
 import xgboost as xg
 
 def fit_cv_clf(inputs, model, n_estimators):
-    """Fits a regressor on the data using a 5-fold cross validation.
+    """Fits a classifier on the data using a 5-fold cross validation.
     Parameters
     ----------
     inputs: List[np.array]
         Data
-    inputs_censored: List[np.array]
-        Censored data (for regression)
     model: str
-        Model to train ('RF'=Random Forest and 'XG'= XGBoost)
+        Model to train ('RF'=Random Forest, 'XG'=XGBoost and 'logreg'=Logistic Regression)
     n_estimators: int
-        Number of trees
-    task: str
-        Classification or Ensembling
+        Number of trees for RF
     Returns
     -------
-            trained regressor and predictions on the test set
+            trained classifier and evaluation metrics
     """
     if model == 'RF':
         hyperparameters_rf = {'n_estimators': n_estimators, 
@@ -47,9 +44,7 @@ def fit_cv_clf(inputs, model, n_estimators):
 
     accs, aucs, recalls, precisions  = [], [], [], []
 
-    kfold = KFold(n_splits=5)
-    kfold = KFold(n_splits=5)
-
+    kfold = KFold(n_splits=5, shuffle=True, random_state=42)
     kfold.get_n_splits(X)
 
     for train_index, valid_index in kfold.split(X):
@@ -59,11 +54,13 @@ def fit_cv_clf(inputs, model, n_estimators):
         if model == 'RF':
             logging.info("Using RandomForest()...")
             clf =  RandomForestClassifier(**hyperparameters_rf)
-        else:
+        elif model == 'XG':
             logging.info("Using XGBClassifier()...")
             clf = xg.XGBClassifier(**hyperparameters_xg)
-
-
+        elif model == 'logreg':
+            logging.info("Using Logistic Regression...")
+            clf = LogisticRegression(max_iter=1000)
+            
         t0 = time.time()
 
         logging.info("Fitting Classifier")
@@ -85,12 +82,12 @@ def fit_cv_clf(inputs, model, n_estimators):
             
     logging.info("=== Accuracy : mean = {} ; std = {} ===".format(np.mean(accs), np.std(accs)))
     logging.info("=== AUC : mean = {} ; std = {} ===".format(np.mean(aucs), np.std(aucs)))
-    logging.info("=== AUC : mean = {} ; std = {} ===".format(np.mean(precisions), np.std(precisions)))
-    logging.info("=== AUC : mean = {} ; std = {} ===".format(np.mean(recalls), np.std(recalls)))
+    logging.info("=== Precision : mean = {} ; std = {} ===".format(np.mean(precisions), np.std(precisions)))
+    logging.info("=== Recall : mean = {} ; std = {} ===".format(np.mean(recalls), np.std(recalls)))
 
     return clf, accs, aucs, precisions, recalls
 
-def fit_cv_ensemble(inputs, inputs_censored, model, n_estimators):
+def fit_cv_ensemble(inputs, inputs_censored, model, n_estimators, include_censored):
     """Fits a regressor on the data using a 5-fold cross validation.
     Parameters
     ----------
@@ -102,8 +99,8 @@ def fit_cv_ensemble(inputs, inputs_censored, model, n_estimators):
         Model to train ('RF'=Random Forest and 'XG'= XGBoost)
     n_estimators: int
         Number of trees
-    task: str
-        Classification or Ensembling
+    include_censored: bool
+        Whether to include the censored data for the regression
     Returns
     -------
             trained regressor and predictions on the test set
@@ -127,8 +124,7 @@ def fit_cv_ensemble(inputs, inputs_censored, model, n_estimators):
     X, y_hr, y_os, y_pfs = inputs
     X_censored, y_os_censored, y_pfs_censored = inputs_censored
 
-    accs = []
-    aucs = []
+    accs, aucs, recalls, precisions  = [], [], [], []
 
     kfold = KFold(n_splits=5)
     kfold = KFold(n_splits=5)
@@ -143,9 +139,10 @@ def fit_cv_ensemble(inputs, inputs_censored, model, n_estimators):
         y_os_train, _ = y_os[train_index], y_os[valid_index]
         y_pfs_train, _ = y_pfs[train_index], y_pfs[valid_index]
         # Stack censored data
-        #y_os_train = np.hstack([y_os_train, y_os_censored])
-        #y_pfs_train = np.hstack([y_pfs_train, y_pfs_censored])
-        #X_train_regr = np.vstack([X_train, X_censored])
+        if include_censored:
+            y_os_train = np.hstack([y_os_train, y_os_censored])
+            y_pfs_train = np.hstack([y_pfs_train, y_pfs_censored])
+            X_train_regr = np.vstack([X_train, X_censored])
 
         if model == 'RF':
             logging.info("Using RandomForest()...")
@@ -163,8 +160,13 @@ def fit_cv_ensemble(inputs, inputs_censored, model, n_estimators):
 
         logging.info("Fitting Ensemble")
         clf.fit(X_train, y_train)
-        regressor_os.fit(X_train, y_os_train)
-        regressor_pfs.fit(X_train, y_pfs_train)
+        if not include_censored:
+            regressor_os.fit(X_train, y_os_train)
+            regressor_pfs.fit(X_train, y_pfs_train)
+        else:
+            regressor_os.fit(X_train_regr, y_os_train)
+            regressor_pfs.fit(X_train_regr, y_pfs_train)
+
         logging.info("Fit in %0.3fs" % (time.time() - t0))
 
         logging.info("Inference on validation set")
@@ -184,18 +186,21 @@ def fit_cv_ensemble(inputs, inputs_censored, model, n_estimators):
         acc = accuracy_score(y_pred, y_valid)
         fpr, tpr, _ = roc_curve(y_pred, y_valid)
         auc_score = auc(fpr, tpr)
-        accs.append(acc)
-        aucs.append(auc_score)
-        print("Accuracy: {} | AUC: {}".format(acc, auc_score))
+        precision = precision_score(y_pred, y_valid)
+        recall = recall_score(y_pred, y_valid)
+        accs.append(acc), aucs.append(auc_score), precisions.append(precision), recalls.append(recall)
+        print("Accuracy: {} | AUC: {} | Precision: {} | Recall: {}".format(acc, auc_score, precision, recall))
             
     logging.info("=== Accuracy : mean = {} ; std = {} ===".format(np.mean(accs), np.std(accs)))
     logging.info("=== AUC : mean = {} ; std = {} ===".format(np.mean(aucs), np.std(aucs)))
+    logging.info("=== Precision : mean = {} ; std = {} ===".format(np.mean(precisions), np.std(precisions)))
+    logging.info("=== Recall : mean = {} ; std = {} ===".format(np.mean(recalls), np.std(recalls)))
 
 
-    return clf, regressor_os, regressor_pfs, accs, aucs
+    return clf, regressor_os, regressor_pfs, accs, aucs, precisions, recalls
 
 def fit_cv_search(inputs, model):
-    """Fits a regressor on the data using a 5-fold cross validation.
+    """Fits a classifier on the data using a 5-fold cross validation.
     Parameters
     ----------
     train_df: pandas.DataFrame
