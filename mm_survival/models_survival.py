@@ -73,8 +73,6 @@ def fit_cv_survival(inputs):
         # Predictions
         preds_valid = estimator.predict_survival_function(X_valid)
         y_pred = survival_prediction(preds_valid)
-        import pdb
-        pdb.set_trace()
         # Metrics
         acc = accuracy_score(y_pred, y_valid_hr)
         fpr, tpr, _ = roc_curve(y_pred, y_valid_hr)

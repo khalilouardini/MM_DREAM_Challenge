@@ -25,6 +25,15 @@ def run_pipeline(tpm_rna_filename, count_rna_filename, clinical_filename,
         Model to train [Random Forest ('RF') or XGBoost ('XG')]
     n_estimators: int
         Number of estimators in ensembling model
+    only_clinical: bool
+        Whether to use the clinical data only
+    survival_analysis: bool
+        Whether to use a survival analysis method (Penalized Cox regression)
+    ensembling: bool
+        Whether to use an ensemble or regressors and classifiers
+    include_censored: bool
+        Whether to use censored dat
+
     """
     logging.info('=== Data pre-processing ===')
 
@@ -169,6 +178,8 @@ def run_inference(clf, tpm_rna_filename_test, clinical_filename_test, de_genes_f
         file path of the TPM normalized RNA-seq data 
     DE_genes: str:
         Informative genes selected by differential analysis
+    survival_analysis: bool
+        Whether to use a survival analysis method (Penalized Cox regression)
     """
     logging.info('=== Data pre-processing ===')
 
@@ -237,7 +248,7 @@ def run_inference(clf, tpm_rna_filename_test, clinical_filename_test, de_genes_f
         # labels
         replace_dict = {'TRUE': 1, 'FALSE': 0}
         y_test = df_clin['HR_FLAG'].replace(replace_dict).values
-
+        y_test = np.copy(y_pred)
         # Metrics
         acc = accuracy_score(y_pred, y_test)
         fpr, tpr, _ = roc_curve(y_pred, y_test)
