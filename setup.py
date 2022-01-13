@@ -25,7 +25,8 @@ setup(
     license='MIT',
     packages=['mm_survival'],
     install_requires=[
-        'pypandoc>=1.4'
+        'pypandoc>=1.4',
+        'click>=8.0'
     ],
     entry_points='''
     [console_scripts]
