@@ -248,7 +248,6 @@ def run_inference(clf, tpm_rna_filename_test, clinical_filename_test, de_genes_f
         # labels
         replace_dict = {'TRUE': 1, 'FALSE': 0}
         y_test = df_clin['HR_FLAG'].replace(replace_dict).values
-        y_test = np.copy(y_pred)
         # Metrics
         acc = accuracy_score(y_pred, y_test)
         fpr, tpr, _ = roc_curve(y_pred, y_test)
