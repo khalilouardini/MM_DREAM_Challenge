@@ -13,7 +13,7 @@ For more information, please refer to the **report**.
 to install the package, follow these steps
 
 1.   Create a new envrionement with `conda` or `virtualenv`: `conda create -n name_env python=3.7.12`
-2.   Activate envrionment: conda activate name_env
+2.   Activate envrionment: `conda activate name_env`
 3.   Install the package into your envrionement - `pip install -e 'git+https://github.com/khalilouardini/MM_DREAM_Challenge.         git#egg=mm_survival'`. The package will be installed in a `src/` directory.
 4.   Go to the main deirectory `cd src/mm-survival`.
 5.   Install requirements - `pip install -r requirements.txt`
