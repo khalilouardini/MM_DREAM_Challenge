@@ -204,13 +204,11 @@ def fit_cv_search(inputs, model):
     Parameters
     ----------
     train_df: pandas.DataFrame
-    keep_features: List[str]
-        List of features to keep in the training set
     model: str
         Model to train ('RF'=Random Forest and 'XG'= XGBoost)
     Returns
     -------
-            trained regressor and predictions on the test set
+            Model initialized with the hyperparameters found with Random Search
     """
     if model == 'RF':
         random_grid = {'n_estimators': [int(x) for x in np.linspace(start = 200, stop = 2000, num = 10)],

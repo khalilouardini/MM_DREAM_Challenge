@@ -18,10 +18,9 @@ setup(
     classifiers=[
         'Programming Language :: Python :: 3',
     ],
-    # Substitute <github_account> with the name of your GitHub account
     url='https://github.com/khalilouardini/MM_DREAM_Challenge',
-    author='Khalil Ouardini',  # Substitute your name
-    author_email='ouardini.k@gmaiL.com',  # Substitute your email
+    author='Khalil Ouardini', 
+    author_email='ouardini.k@gmaiL.com',
     license='MIT',
     packages=['mm_survival'],
     install_requires=[
