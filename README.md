@@ -43,7 +43,7 @@ To run the code, you can directly select options from the command line. The opti
 
 - [For help, run: `mm_survival_analysis --help` in the commande line]]
 
-- Make sure you to replace `path/to/your/data` with your path, all the other options will be set to default. To reproduce the experiment with the **Random Forest** model, run:
+- To reproduce the experiment with the **Random Forest** model, run the following bash command. (make sure you to replace `path/to/your/data` with your path, all the other options will be set to default): 
 
     `mm_survival_analysis --tpm_rna_filename path/to/your/data --count_rna_filename path/to/your/data. --clinical_filename path/to/your/data`
 
