@@ -39,7 +39,7 @@ logging.basicConfig(
               help='Path to the clinical data (TEST)')
 @click.option('--de_genes_filename',
               type=click.Path(exists=True),
-              default='exploration/data/gene_expression/differential_expression/DE_genes.txt',
+              default='exploration/data/gene_expression/differential_expression/DE_genes2.txt',
               prompt='Path to the list of differentially expressed genes',
               help='List of differentially expressed genes')
 @click.option('--signature_genes_filename',
