@@ -157,9 +157,6 @@ def fit_cv_ensemble(inputs, inputs_censored, model, n_estimators, include_censor
 
 
         t0 = time.time()
-
-        logging.info("Fitting Ensemble")
-        clf.fit(X_train, y_train)
         if not include_censored:
             regressor_os.fit(X_train, y_os_train)
             regressor_pfs.fit(X_train, y_pfs_train)
@@ -170,17 +167,25 @@ def fit_cv_ensemble(inputs, inputs_censored, model, n_estimators, include_censor
         logging.info("Fit in %0.3fs" % (time.time() - t0))
 
         logging.info("Inference on validation set")
-        y_pred_hr = clf.predict(X_valid)
         # Prediction for D_OS
-        y_pred_os = regressor_os.predict(X_valid)
-        y_pred_os = y_pred_os < 18*30
+        y_os_train = regressor_os.predict(X_train)
+        y_os_valid = regressor_os.predict(X_valid)
+        #y_pred_os = y_pred_os < 18*30
         # Prediction for PFS
-        y_pred_pfs = regressor_pfs.predict(X_valid)
-        y_pred_pfs = y_pred_pfs < 18*30
+        y_pfs_train = regressor_pfs.predict(X_train)
+        y_pfs_valid = regressor_pfs.predict(X_valid)
+        #y_pred_pfs = y_pred_pfs < 18*30
         # Prediction for regressions
-        y_pred_regr = np.logical_or(y_pred_os, y_pred_pfs).astype(int)
+        #y_pred_regr = np.logical_or(y_pred_os, y_pred_pfs).astype(int)
         # Final prediction
-        y_pred = np.logical_or(y_pred_hr, y_pred_regr).astype(int)
+        # Train meta-model on the base features + predictions
+
+        X_meta_train = np.hstack([X_train, y_os_train.reshape(-1, 1), y_pfs_train.reshape(-1,1)])
+        X_meta_valid = np.hstack([X_valid, y_os_valid.reshape(-1, 1), y_pfs_valid.reshape(-1,1)])
+        logging.info("Fitting Ensemble (Meta-Model)")
+        clf.fit(X_meta_train, y_train)
+        y_pred = clf.predict(X_meta_valid)
+        #y_pred = np.logical_or(y_pred_hr, y_pred_regr).astype(int)
 
         # Metrics
         acc = accuracy_score(y_pred, y_valid)
